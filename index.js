@@ -6,8 +6,8 @@ app.get('/', function (req, res) {
     res.send('<h1>This is test chat server</h1>');
 });
 
-http.listen(3000, function () {
-    console.log('listening on *:3000');
+http.listen(3210, function () {
+    console.log('listening on *:3210');
 });
 
 
