@@ -1,0 +1,26 @@
+{
+  "name": "practice-nodejs-socketio-chat-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/insthync/practice-nodejs-socketio-chat-server.git"
+  },
+  "keywords": [
+    "nodejs",
+    "socketio"
+  ],
+  "author": "Ittipon Teerapruettikulchai",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/insthync/practice-nodejs-socketio-chat-server/issues"
+  },
+  "homepage": "https://github.com/insthync/practice-nodejs-socketio-chat-server#readme",
+  "dependencies": {
+    "socket.io": "^2.0.1"
+  }
+}
