@@ -10,18 +10,20 @@ http.listen(3210, function () {
     console.log('listening on *:3210');
 });
 
-
 var loggedInSockets = {};
 var messageIds = [];
 io.on('connection', function (socket) {
     // `validateSocket` is optional parameter
     // If `validateSocket` have been defined it's going to use to find that it's already login or not
+    console.log('new connection ' + socket.id);
+
     function checkLogin(userId, validateSocket) {
         return loggedInSockets[userId] && loggedInSockets[userId].length > 0 &&
             (!validateSocket || loggedInSockets[userId].indexOf(validateSocket) !== -1);
     }
 
     function emitFailMessage(message, code) {
+        console.log('emit fail ' + message);
         socket.emit('fail', {
             code,
             message,
@@ -29,7 +31,9 @@ io.on('connection', function (socket) {
     }
 
     socket.on('disconnect', function () {
-        if (socket.userId) {
+        console.log('socket ' + socket.id + ' disconnect');
+        var userId = socket.userId;
+        if (userId) {
             var socketArray = loggedInSockets[userId];
             var socketIndex = socketArray.indexOf(socket);
             socketArray.splice(socketIndex);
@@ -40,6 +44,7 @@ io.on('connection', function (socket) {
     });
 
     socket.on('login', function (loginData) {
+        console.log('socket ' + socket.id + ' login ' + JSON.stringify(loginData));
         var userId = loginData.userId;
         var loginToken = loginData.loginToken;
 
@@ -51,16 +56,19 @@ io.on('connection', function (socket) {
         }
         socket.userId = userId;
         socket.loginToken = loginToken;
-
+        
         if (!loggedInSockets[userId])
             loggedInSockets[userId] = [];
         loggedInSockets[userId].push(socket);
 
         // Success, I've no idea about response data so I response all socket data
-        socket.emit('login', socket);
+        socket.emit('login', {
+            userId
+        });
     });
 
     socket.on('joinRoom', function (joinData) {
+        console.log('socket ' + socket.id + ' joinRoom ' + JSON.stringify(joinData));
         var userId = socket.userId;
         var roomId = joinData.roomId;
 
@@ -72,15 +80,16 @@ io.on('connection', function (socket) {
         }
 
         // Check if user is in the room or not, if not emit new participant
+
+        socket.join(roomId);
         io.sockets.in(roomId).emit('joinRoom', {
             userId,
             roomId,
         });
-
-        socket.join(roomId);
     });
 
     socket.on('enterMessage', function (messageData) {
+        console.log('socket ' + socket.id + ' enterMessage ' + JSON.stringify(messageData));
         var userId = socket.userId;
         var roomId = messageData.roomId;
         var message = messageData.message;
@@ -106,7 +115,8 @@ io.on('connection', function (socket) {
         });
     });
 
-    socket.io('deleteMessage', function (deleteData) {
+    socket.on('deleteMessage', function (deleteData) {
+        console.log('socket ' + socket.id + ' deleteMessage ' + JSON.stringify(deleteData));
         var userId = socket.userId;
         var roomId = deleteData.roomId;
         var messageId = deleteData.messageId;
