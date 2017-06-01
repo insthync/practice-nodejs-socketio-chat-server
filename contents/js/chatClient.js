@@ -65,8 +65,8 @@ function startChat() {
 
         // Add stream from another
         peerConnection.onaddstream = function (event) {
-            //if (rtcPeerMedias[socketId])
-            //    return;
+            if (rtcPeerMedias[socketId])
+                return;
             var mediaPlayer = $("<video>");
             mediaPlayer.attr("autoplay", "autoplay");
             mediaPlayer.attr("muted", "true");
