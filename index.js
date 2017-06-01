@@ -1,10 +1,10 @@
-var app = require('express')();
+var express = require('express');
+var app = express();
 var http = require('http').Server(app);
 var io = require('socket.io')(http);
 
-app.get('/', function (req, res) {
-    res.send('<h1>This is test chat server</h1>');
-});
+app.use(express.static(__dirname + '/contents'));
+app.get('/', function (req, res) { res.sendFile(__dirname + '/contents/index.html'); });
 
 http.listen(3210, function () {
     console.log('listening on *:3210');
@@ -34,7 +34,7 @@ io.on('connection', function (socket) {
     }
 
     function isInRoom(roomId) {
-        return socket.rooms.indexOf(socket.id) >= 0;
+        return socket.rooms && roomId in socket.rooms;
     }
 
     function generateMessageId(roomId, userId) {
@@ -53,6 +53,7 @@ io.on('connection', function (socket) {
     function deleteMessageFromDb(messageId, roomId, userId) {
         var lastIdString = userId + roomId;
         var idIndex = messageIds.indexOf(messageId);
+        console.log(messageId.substr(messageId.length - lastIdString.length) + " " + lastIdString);
         if (idIndex === -1 || messageId.substr(messageId.length - lastIdString.length) !== lastIdString) {
             return false;
         }
@@ -198,7 +199,7 @@ io.on('connection', function (socket) {
             return;
         }
 
-        if (!deleteMessageFromDb(messageId)) {
+        if (!deleteMessageFromDb(messageId, roomId, userId)) {
             // Failed, may emit failure message;
             emitFailMessage('Message not found');
             return;
