@@ -10,12 +10,14 @@ http.listen(3210, function () {
     console.log('listening on *:3210');
 });
 
+var isLogging = true;
 var loggedInSockets = {};
 var messageIds = [];
 io.on('connection', function (socket) {
     // `validateSocket` is optional parameter
     // If `validateSocket` have been defined it's going to use to find that it's already login or not
-    console.log('new connection ' + socket.id);
+    if (isLogging)
+        console.log('new connection ' + socket.id);
 
     function checkLogin(userId, validateSocket) {
         return loggedInSockets[userId] && loggedInSockets[userId].length > 0 &&
@@ -23,15 +25,41 @@ io.on('connection', function (socket) {
     }
 
     function emitFailMessage(message, code) {
-        console.log('emit fail ' + message);
+        if (isLogging)
+            console.log('emit fail ' + message);
         socket.emit('fail', {
             code,
             message,
         });
     }
 
+    function generateMessageId(roomId, userId) {
+        return Date.now() + userId + roomId;
+    }
+
+    function saveMessageToDb(messageId, roomId, userId, message) {
+        if (messageIds.indexOf(messageId) !== -1) {
+            return false;
+        }
+        messageIds.push(messageId);
+        // TODO: Will implement to store to database later
+        return true;
+    }
+
+    function deleteMessageFromDb(messageId, roomId, userId) {
+        var lastIdString = userId + roomId;
+        var idIndex = messageIds.indexOf(messageId);
+        if (idIndex === -1 || messageId.substr(messageId.length - lastIdString.length) !== lastIdString) {
+            return false;
+        }
+        messageIds.splice(idIndex);
+        // TODO: Will implement to remove from database later
+        return true;
+    }
+
     socket.on('disconnect', function () {
-        console.log('socket ' + socket.id + ' disconnect');
+        if (isLogging)
+            console.log('socket ' + socket.id + ' disconnect');
         var userId = socket.userId;
         if (userId) {
             var socketArray = loggedInSockets[userId];
@@ -44,7 +72,8 @@ io.on('connection', function (socket) {
     });
 
     socket.on('login', function (loginData) {
-        console.log('socket ' + socket.id + ' login ' + JSON.stringify(loginData));
+        if (isLogging)
+            console.log('socket ' + socket.id + ' login ' + JSON.stringify(loginData));
         var userId = loginData.userId;
         var loginToken = loginData.loginToken;
 
@@ -56,19 +85,20 @@ io.on('connection', function (socket) {
         }
         socket.userId = userId;
         socket.loginToken = loginToken;
-        
+
         if (!loggedInSockets[userId])
             loggedInSockets[userId] = [];
         loggedInSockets[userId].push(socket);
 
         // Success, I've no idea about response data so I response all socket data
         socket.emit('login', {
-            userId
+            userId,
         });
     });
 
     socket.on('joinRoom', function (joinData) {
-        console.log('socket ' + socket.id + ' joinRoom ' + JSON.stringify(joinData));
+        if (isLogging)
+            console.log('socket ' + socket.id + ' joinRoom ' + JSON.stringify(joinData));
         var userId = socket.userId;
         var roomId = joinData.roomId;
 
@@ -88,17 +118,40 @@ io.on('connection', function (socket) {
         });
     });
 
+    socket.on('typingMessage', function (typingData) {
+        if (isLogging)
+            console.log('socket ' + socket.id + ' typingMessage ' + JSON.stringify(typingData));
+        var userId = socket.userId;
+        var roomId = messageData.roomId;
+        var isTyping = typingData.isTyping;
+
+        // If pass find room condition
+        if (!userId || !checkLogin(userId, socket)) {
+            // Failed, may emit failure message;
+            emitFailMessage('User not login');
+            return;
+        }
+
+        io.sockets.in(roomId).emit('enterMessage', {
+            userId,
+            roomId,
+            isTyping,
+        });
+    });
+
     socket.on('enterMessage', function (messageData) {
-        console.log('socket ' + socket.id + ' enterMessage ' + JSON.stringify(messageData));
+        if (isLogging)
+            console.log('socket ' + socket.id + ' enterMessage ' + JSON.stringify(messageData));
         var userId = socket.userId;
         var roomId = messageData.roomId;
         var message = messageData.message;
-        var messageId = Date.now() + userId + roomId;
+        var messageId = generateMessageId(roomId, userId);
 
-        if (messageIds.indexOf(messageId) !== -1) {
+        if (!saveMessageToDb(messageId, roomId, userId, message)) {
+            // Failed, may emit failure message;
+            emitFailMessage('Enter message fail');
             return;
         }
-        messageIds.push(messageId);
 
         // If pass find room condition
         if (!userId || !checkLogin(userId, socket)) {
@@ -111,20 +164,18 @@ io.on('connection', function (socket) {
             messageId,
             userId,
             roomId,
-            message
+            message,
         });
     });
 
     socket.on('deleteMessage', function (deleteData) {
-        console.log('socket ' + socket.id + ' deleteMessage ' + JSON.stringify(deleteData));
+        if (isLogging)
+            console.log('socket ' + socket.id + ' deleteMessage ' + JSON.stringify(deleteData));
         var userId = socket.userId;
         var roomId = deleteData.roomId;
         var messageId = deleteData.messageId;
 
-        var lastIdLength = userId + roomId;
-        var idIndex = messageIds.indexOf(messageId);
-        if (messageId.substr(messageId.length - lastIdLength) === lastIdLength &&
-            idIndex === -1) {
+        if (!deleteMessageFromDb(messageId)) {
             // Failed, may emit failure message;
             emitFailMessage('Message not found');
             return;
