@@ -20,7 +20,7 @@ io.on('connection', function (socket) {
         console.log('new connection ' + socket.id);
 
     function checkLogin(userId, validateSocket) {
-        return loggedInSockets[userId] && loggedInSockets[userId].length > 0 &&
+        return userId && loggedInSockets[userId] && loggedInSockets[userId].length > 0 &&
             (!validateSocket || loggedInSockets[userId].indexOf(validateSocket) !== -1);
     }
 
@@ -31,6 +31,10 @@ io.on('connection', function (socket) {
             code,
             message,
         });
+    }
+
+    function isInRoom(roomId) {
+        return socket.rooms.indexOf(socket.id) >= 0;
     }
 
     function generateMessageId(roomId, userId) {
@@ -103,13 +107,18 @@ io.on('connection', function (socket) {
         var roomId = joinData.roomId;
 
         // If pass find room condition
-        if (!userId || !checkLogin(userId, socket)) {
+        if (!checkLogin(userId, socket)) {
             // Failed, may emit failure message;
             emitFailMessage('User not login');
             return;
         }
 
         // Check if user is in the room or not, if not emit new participant
+        if (isInRoom(roomId)) {
+            // Failed, may emit failure message;
+            emitFailMessage('User already in room');
+            return;
+        }
 
         socket.join(roomId);
         io.sockets.in(roomId).emit('joinRoom', {
@@ -126,9 +135,15 @@ io.on('connection', function (socket) {
         var isTyping = typingData.isTyping;
 
         // If pass find room condition
-        if (!userId || !checkLogin(userId, socket)) {
+        if (!checkLogin(userId, socket)) {
             // Failed, may emit failure message;
             emitFailMessage('User not login');
+            return;
+        }
+
+        if (!isInRoom(roomId)) {
+            // Failed, may emit failure message;
+            emitFailMessage('User not in room');
             return;
         }
 
@@ -147,16 +162,22 @@ io.on('connection', function (socket) {
         var message = messageData.message;
         var messageId = generateMessageId(roomId, userId);
 
+        // If pass find room condition
+        if (!checkLogin(userId, socket)) {
+            // Failed, may emit failure message;
+            emitFailMessage('User not login');
+            return;
+        }
+
         if (!saveMessageToDb(messageId, roomId, userId, message)) {
             // Failed, may emit failure message;
             emitFailMessage('Enter message fail');
             return;
         }
-
-        // If pass find room condition
-        if (!userId || !checkLogin(userId, socket)) {
+        
+        if (!isInRoom(roomId)) {
             // Failed, may emit failure message;
-            emitFailMessage('User not login');
+            emitFailMessage('User not in room');
             return;
         }
 
@@ -175,9 +196,22 @@ io.on('connection', function (socket) {
         var roomId = deleteData.roomId;
         var messageId = deleteData.messageId;
 
+        // If pass find room condition
+        if (!checkLogin(userId, socket)) {
+            // Failed, may emit failure message;
+            emitFailMessage('User not login');
+            return;
+        }
+
         if (!deleteMessageFromDb(messageId)) {
             // Failed, may emit failure message;
             emitFailMessage('Message not found');
+            return;
+        }
+        
+        if (!isInRoom(roomId)) {
+            // Failed, may emit failure message;
+            emitFailMessage('User not in room');
             return;
         }
 
@@ -185,4 +219,13 @@ io.on('connection', function (socket) {
             messageId,
         });
     });
+
+    // WebRTC methods
+    socket.on('startVideoChat', function (videoChatData) {
+        if (isLogging)
+            console.log('socket ' + socket.id + ' startVideoChat ' + JSON.stringify(videoChatData));
+        var userId = socket.userId;
+        var roomId = videoChatData.roomId;
+
+    })
 });
