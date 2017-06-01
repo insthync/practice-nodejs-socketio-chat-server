@@ -3,10 +3,15 @@ function startChat() {
     var currentRoomId = '';
     var rtcPeers = {};
     var rtcPeerMedias = {};
+    var localStream = null;
     var socket = io.connect('http://localhost:3210');
 
     // WEBRTC relates functions
     function setupLocalMedia(callback) {
+        if (localStream) {
+            if (callback) callback(null, localStream);
+            return;
+        }
         // Ask user for permission to use the computers microphone and/or camera, 
         // attach it to an <audio> or <video> tag if they give us access. 
         console.log("Requesting access to local audio / video inputs");
@@ -20,11 +25,13 @@ function startChat() {
         },
             function (stream) { // user accepted access to a/v
                 console.log("Access granted to audio/video");
+                localStream = stream;
                 var mediaPlayer = $("<video>");
                 mediaPlayer.attr("autoplay", "autoplay");
                 mediaPlayer.attr("muted", "true"); // always mute ourselves by default
+                mediaPlayer[0].srcObject = stream;
                 $('#videos').append(mediaPlayer);
-                if (callback) callback(null, stream);
+                if (callback) callback(null, localStream);
             },
             function (err) { // user denied access to a/v
                 console.log("Access denied for audio/video");
@@ -35,7 +42,7 @@ function startChat() {
 
     function createRTCPeer(socketId) {
         var peerConnection = new RTCPeerConnection(
-            { iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }] },
+            { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] },
             { optional: [{ DtlsSrtpKeyAgreement: true }] } /* this will no longer be needed by chrome
                                                             * eventually (supposedly), but is necessary 
                                                             * for now to get firefox to talk to chrome */
@@ -49,8 +56,8 @@ function startChat() {
                 socket.emit('relayICECandidate', {
                     socketId,
                     iceCandidate: {
-                        'sdpMLineIndex': event.candidate.sdpMLineIndex,
-                        'candidate': event.candidate.candidate
+                        sdpMLineIndex: event.candidate.sdpMLineIndex,
+                        candidate: event.candidate.candidate,
                     }
                 });
             }
@@ -58,13 +65,20 @@ function startChat() {
 
         // Add stream from another
         peerConnection.onaddstream = function (event) {
+            //if (rtcPeerMedias[socketId])
+            //    return;
             var mediaPlayer = $("<video>");
             mediaPlayer.attr("autoplay", "autoplay");
             mediaPlayer.attr("muted", "true");
+            mediaPlayer[0].srcObject = event.stream;
             $('#videos').append(mediaPlayer);
             rtcPeerMedias[socketId] = mediaPlayer;
         }
 
+        if (localStream)
+            peerConnection.addStream(localStream);
+
+        console.log("created peer " + JSON.stringify(rtcPeers[socketId]));
         return rtcPeers[socketId];
     }
 
@@ -81,8 +95,12 @@ function startChat() {
         return false;
     });
     $('#startVideoChatBtn').on('click', function () {
-        socket.emit('startVideoChat', {
-            roomId: currentRoomId,
+        setupLocalMedia(function(err, stream) {
+            if (err)
+                console.log(err);
+            socket.emit('startVideoChat', {
+                roomId: currentRoomId,
+            });
         });
     });
     socket.on('connect', function () {
@@ -132,22 +150,16 @@ function startChat() {
     });
     socket.on('startVideoChat', function (result) {
         var socketId = result.socketId;
-        var userId = result.userId;
-        var isAuthorized = userId === currentUserId;
+        var createOffer = result.createOffer;
 
-        var peer = createRTCPeer(socketId, isAuthorized);
+        var peer = createRTCPeer(socketId);
         var peerConnection = peer.connection;
         /* Only one side of the peer connection should create the
          * offer, the signaling server picks one to be the offerer. 
          * The other user will get a 'sessionDescription' event and will
          * create an offer, then send back an answer 'sessionDescription' to us
          */
-        if (isAuthorized) {
-            setupLocalMedia(function (err, stream) {
-                if (!err) {
-                    peerConnection.addStream(stream);
-                }
-            });
+        if (createOffer) {
             peerConnection.createOffer(
                 function (sessionDescription) {
                     peerConnection.setLocalDescription(sessionDescription,
@@ -168,6 +180,16 @@ function startChat() {
             );
         }
     });
+    /**
+     * The offerer will send a number of ICE Candidate blobs to the answerer so they 
+     * can begin trying to find the best path to one another on the net.
+     */
+    socket.on('relayICECandidate', function (result) {
+        var socketId = result.socketId;
+        var iceCandidate = result.iceCandidate;
+        var peerConnection = rtcPeers[socketId].connection;
+        peerConnection.addIceCandidate(new RTCIceCandidate(iceCandidate));
+    });
     /** 
      * Peers exchange session descriptions which contains information
      * about their audio / video settings and that sort of stuff. First
@@ -175,9 +197,10 @@ function startChat() {
      * "offer"), then the answerer sends one back (with type "answer").  
      */
     socket.on('relaySessionDescription', function (result) {
+        console.log(JSON.stringify(result));
         var socketId = result.socketId;
-        var peerConnection = rtcPeers[socketId].connection;
         var remoteSessionDescription = result.sessionDescription;
+        var peerConnection = rtcPeers[socketId].connection;
 
         var desc = new RTCSessionDescription(remoteSessionDescription);
         var stuff = peerConnection.setRemoteDescription(desc,
@@ -207,15 +230,5 @@ function startChat() {
                 console.log("setRemoteDescription error: ", error);
             }
         );
-    });
-    /**
-     * The offerer will send a number of ICE Candidate blobs to the answerer so they 
-     * can begin trying to find the best path to one another on the net.
-     */
-    socket.on('relayICECandidate', function (result) {
-        var socketId = result.socketId;
-        var iceCandidate = result.iceCandidate;
-        var peerConnection = rtcPeers[peer_id].connection;
-        peerConnection.addIceCandidate(new RTCIceCandidate(iceCandidate));
     });
 }

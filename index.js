@@ -37,6 +37,10 @@ io.on('connection', function (socket) {
         return socket.rooms && roomId in socket.rooms;
     }
 
+    function getSocket(socketId) {
+        return io.sockets.connected[socketId];
+    }
+
     function generateMessageId(roomId, userId) {
         return Date.now() + userId + roomId;
     }
@@ -236,10 +240,25 @@ io.on('connection', function (socket) {
         }
 
         // Tell joining user information to joined users
-        io.sockets.in(roomId).emit('startVideoChat', {
-            socketId: socket.id,
-            userId: userId,
-        });
+        var socketsInRoom = io.sockets.adapter.rooms[roomId];
+        if (socketsInRoom && socketsInRoom.length > 0) {
+            var socketIds = Object.keys(socketsInRoom.sockets);
+            for (var i = 0; i < socketIds.length; ++i) {
+                var socketId = socketIds[i];
+                if (socketId !== socket.id) {
+                    // Create offers to another clients to let them to send data
+                    socket.emit('startVideoChat', {
+                        socketId,
+                        createOffer: true,
+                    });
+                    // Send to another clients, that current user start video chat
+                    io.to(socketId).emit('startVideoChat', {
+                        socketId: socket.id,
+                        createOffer: false,
+                    });
+                }
+            }
+        }
     });
 
     socket.on('stopVideoChat', function (requestData) {
@@ -274,8 +293,8 @@ io.on('connection', function (socket) {
         let iceCandidate = requestData.iceCandidate;
 
         io.to(socketId).emit('relayICECandidate', {
-            socketId,
-            iceCandidate
+            socketId: socket.id,
+            iceCandidate,
         });
     });
 
@@ -286,8 +305,8 @@ io.on('connection', function (socket) {
         let sessionDescription = requestData.sessionDescription;
 
         io.to(socketId).emit('relaySessionDescription', {
-            socketId,
-            sessionDescription
+            socketId: socket.id,
+            sessionDescription,
         });
     });
 });
