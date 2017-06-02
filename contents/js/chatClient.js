@@ -41,44 +41,43 @@ function startChat() {
     }
 
     function createRTCPeer(socketId) {
-        var peerConnection = new RTCPeerConnection(
-            { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] },
-            { optional: [{ DtlsSrtpKeyAgreement: true }] } /* this will no longer be needed by chrome
-                                                            * eventually (supposedly), but is necessary 
-                                                            * for now to get firefox to talk to chrome */
-        );
+        if (!(socketId in rtcPeers)) {
+            var peerConnection = new RTCPeerConnection(
+                { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] },
+                { optional: [{ DtlsSrtpKeyAgreement: true }] } /* this will no longer be needed by chrome
+                                                                * eventually (supposedly), but is necessary 
+                                                                * for now to get firefox to talk to chrome */
+            );
 
-        rtcPeers[socketId] = {};
-        rtcPeers[socketId].connection = peerConnection;
+            rtcPeers[socketId] = {};
+            rtcPeers[socketId].connection = peerConnection;
 
-        peerConnection.onicecandidate = function (event) {
-            if (event.candidate) {
-                socket.emit('relayICECandidate', {
-                    socketId,
-                    iceCandidate: {
-                        sdpMLineIndex: event.candidate.sdpMLineIndex,
-                        candidate: event.candidate.candidate,
-                    }
-                });
+            peerConnection.onicecandidate = function (event) {
+                if (event.candidate) {
+                    socket.emit('relayICECandidate', {
+                        socketId,
+                        iceCandidate: {
+                            sdpMLineIndex: event.candidate.sdpMLineIndex,
+                            candidate: event.candidate.candidate,
+                        }
+                    });
+                }
             }
+
+            // Add stream from another
+            peerConnection.onaddstream = function (event) {
+                if (rtcPeerMedias[socketId])
+                    return;
+                var mediaPlayer = $("<video>");
+                mediaPlayer.attr("autoplay", "autoplay");
+                mediaPlayer.attr("muted", "true");
+                mediaPlayer[0].srcObject = event.stream;
+                $('#videos').append(mediaPlayer);
+                rtcPeerMedias[socketId] = mediaPlayer;
+            }
+
+            console.log("created peer " + JSON.stringify(rtcPeers[socketId]));
         }
-
-        // Add stream from another
-        peerConnection.onaddstream = function (event) {
-            if (rtcPeerMedias[socketId])
-                return;
-            var mediaPlayer = $("<video>");
-            mediaPlayer.attr("autoplay", "autoplay");
-            mediaPlayer.attr("muted", "true");
-            mediaPlayer[0].srcObject = event.stream;
-            $('#videos').append(mediaPlayer);
-            rtcPeerMedias[socketId] = mediaPlayer;
-        }
-
-        if (localStream)
-            peerConnection.addStream(localStream);
-
-        console.log("created peer " + JSON.stringify(rtcPeers[socketId]));
         return rtcPeers[socketId];
     }
 
@@ -152,8 +151,14 @@ function startChat() {
         var socketId = result.socketId;
         var createOffer = result.createOffer;
 
+        // Create RTC Peer by given data
         var peer = createRTCPeer(socketId);
         var peerConnection = peer.connection;
+
+        // Add video to another clients, if video available
+        if (localStream)
+            peerConnection.addStream(localStream);
+
         /* Only one side of the peer connection should create the
          * offer, the signaling server picks one to be the offerer. 
          * The other user will get a 'sessionDescription' event and will
